@@ -15,8 +15,8 @@ BATCH=int(os.getenv("CRAWL_BATCH","400"))
 UA="WhoaArchiveResearch/1.0 (+%s)"%CONTACT
 LOG=logging.getLogger("whoa")
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
-THREAD=re.compile(r"^/forum/[^/?#]+/[^/?#]+/[0-9]+/[0-9]+\\.aspx$",re.I)
-CATEGORY=re.compile(r"^/forum/(?:[^/?#]+/)?[^/?#]+\\.aspx$",re.I)
+THREAD=re.compile(r"^/forum/[^/?#]+/[^/?#]+/[0-9]+/[0-9]+\.aspx$",re.I)
+CATEGORY=re.compile(r"^/forum/(?:[^/?#]+/)?[^/?#]+\.aspx$",re.I)
 app=FastAPI(title="Whoa Archive")
 state={"running":False,"last_error":None,"robots":None,"last_run":None}
 
@@ -79,7 +79,7 @@ def parse_page(html,url):
     links=[canonical(a.get("href",""),url) for a in soup.select("a[href]")]
     for item in main.select("script,style,nav,header,footer,form,noscript,svg,iframe,.sidebar,.menu,.navigation,.breadcrumb,.pagination"):
         item.decompose()
-    body=re.sub(r"\\n{3,}","\\n\\n",main.get_text("\\n",strip=True))
+    body=re.sub(r"\n{3,}","\n\n",main.get_text("\n",strip=True))
     return title[:450],category[:200],body[:2000000],{v for v in links if v}
 
 def can_crawl(session):
@@ -168,7 +168,7 @@ def stats():
 
 @app.get("/api/search")
 def search(q:str=Query(min_length=1,max_length=200),page:int=Query(default=1,ge=1,le=500)):
-    tokens=re.findall(r"[^\\s\\"*^()]+",q)
+    tokens=re.findall(r"[^\s\"*^()]+",q)
     if not tokens:return {"total":0,"results":[]}
     match=" AND ".join('"' + t.replace('"','') + '"' for t in tokens[:12])
     with db() as c:
