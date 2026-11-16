@@ -42,3 +42,11 @@ Fullständig täckning kräver inventering av alla kategorier och paginering, gr
 ## Gränser
 
 Gratisdriften är beroende av GitHubs gällande kapacitetsgränser och tjänsternas tillgänglighet. Indexets storlek och byggtid måste följas när arkivet växer. Den här versionen har inte verifierats mot ett färdiginsamlat helt forum.
+
+## Återförsök vid källfel
+
+Enstaka HTTP 5xx och nätverksfel sparas i kön med en stigande väntetid: en minut, två minuter och därefter upp till sex timmar. Andra adresser fortsätter under tiden. Återförsökens tider och antal följer med checkpointen, och en lyckad hämtning tar bort den tidigare felmarkeringen.
+
+HTTP 429, serverns `Retry-After` och fem server-/nätverksfel i följd pausar hela insamlingen. En sparad väntetid respekteras också av nästa körning. En pausad eller avbruten körning sparar och exporterar redan insamlat material. Saknade och oläsbara sidor redovisas fortfarande som luckor.
+
+`python -m unittest test_crawler -v` verifierar återförsök, bevarad kö, gamla checkpointfiler och pauser utan att hämta webbsidor eller ändra den verkliga databasen.

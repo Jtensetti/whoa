@@ -1,6 +1,7 @@
 import os,re,time,sqlite3,threading,logging,datetime,gzip,json,hashlib
 from urllib.parse import urljoin,urlsplit,parse_qs,urlunsplit
 from urllib.robotparser import RobotFileParser
+from email.utils import parsedate_to_datetime
 import requests
 from bs4 import BeautifulSoup
 from whoa_parser import extract_thread
@@ -54,6 +55,10 @@ def db():
     c.execute("CREATE TABLE IF NOT EXISTS crawl_status(key TEXT PRIMARY KEY,value TEXT)")
     c.execute("CREATE TABLE IF NOT EXISTS category_inventory(url TEXT PRIMARY KEY,listing_pages INTEGER NOT NULL DEFAULT 0,checked_at TEXT)")
     c.execute("CREATE INDEX IF NOT EXISTS pending_priority ON pending(priority)")
+    columns={row[1] for row in c.execute('pragma table_info(pending)')}
+    for name,kind in [('next_attempt','REAL NOT NULL DEFAULT 0'),('attempts','INTEGER NOT NULL DEFAULT 0')]:
+        if name not in columns:c.execute(f'alter table pending add column {name} {kind}')
+    c.execute("CREATE INDEX IF NOT EXISTS pending_ready ON pending(priority,next_attempt)")
     c.commit()
     return c
 
@@ -151,44 +156,93 @@ def can_crawl(session):
         raise RuntimeError("robots.txt disallows forum index")
     return parser
 
+def next_pending(c,iteration,now=None):
+    now=time.time() if now is None else now
+    row=c.execute("select url from pending where next_attempt<=? and priority>=30 order by priority desc,rowid limit 1",(now,)).fetchone()
+    if not row:
+        preferred=10 if iteration%2==0 else 20
+        row=c.execute("select url from pending where next_attempt<=? and priority=? order by rowid limit 1",(now,preferred)).fetchone()
+    if not row:row=c.execute("select url from pending where next_attempt<=? order by rowid limit 1",(now,)).fetchone()
+    return row[0] if row else None
+
+def retry_after_seconds(value,now=None):
+    now=time.time() if now is None else now
+    if not value:return 0
+    try:return max(0,float(value))
+    except (ValueError,TypeError):
+        try:return max(0,parsedate_to_datetime(value).timestamp()-now)
+        except (ValueError,TypeError,OverflowError):return 0
+
+def defer_url(c,url,reason,minimum_wait=0,now=None):
+    """Keep a failing URL in the checkpoint without holding up healthy pages."""
+    now=time.time() if now is None else now
+    row=c.execute('select attempts from pending where url=?',(url,)).fetchone()
+    attempts=(row[0] if row else 0)+1
+    wait=max(minimum_wait,min(21600,60*2**min(attempts-1,9)))
+    c.execute('update pending set next_attempt=?,attempts=? where url=?',(now+wait,attempts,url))
+    c.execute('insert into failures(url,reason,attempts) values (?,?,?) on conflict(url) do update set reason=excluded.reason,attempts=excluded.attempts',(url,reason,attempts))
+    c.commit()
+    LOG.warning('Deferred %s for %.0fs after attempt %s: %s',url,wait,attempts,reason)
+    return now+wait
+
+def pause_host(c,reason,seconds):
+    until=time.time()+seconds
+    c.execute("insert or replace into crawl_status values ('pause_until',?)",(str(until),))
+    c.commit()
+    raise RuntimeError(reason+'; crawl paused until '+datetime.datetime.fromtimestamp(until,datetime.timezone.utc).isoformat())
+
 def crawl_batch():
     c=db()
     s=requests.Session()
     s.headers.update({"User-Agent":UA,"Accept-Language":"sv,en;q=0.7"})
     try:
+        paused=c.execute("select value from crawl_status where key='pause_until'").fetchone()
+        if paused and float(paused[0])>time.time():
+            raise RuntimeError('Server cooldown still active; preserving queue')
         robots=can_crawl(s)
         state["robots"]="allowed"
         delay=max(DELAY,robots.crawl_delay(UA) or robots.crawl_delay("*") or 0)
         c.execute("insert or replace into crawl_status values ('last_error','')")
         prepare_frontier(c)
         started=time.monotonic()
+        consecutive_errors=0
+        LOG.info('Resuming crawl: indexed=%s queued=%s',c.execute('select count(*) from pages').fetchone()[0],c.execute('select count(*) from pending').fetchone()[0])
         for i in range(BATCH):
             if time.monotonic()-started>=SECONDS:break
             # Alternate listing discovery with full-text collection, without topic priorities.
-            row=c.execute("select url from pending where priority>=30 order by priority desc,rowid limit 1").fetchone()
-            if not row:
-                preferred=10 if i%2==0 else 20
-                row=c.execute("select url from pending where priority=? order by rowid limit 1",(preferred,)).fetchone()
-            if not row:row=c.execute("select url from pending order by rowid limit 1").fetchone()
-            if not row:break
-            url=row[0]
+            url=next_pending(c,i)
+            if not url:break
             if not robots.can_fetch(UA,url):
                 c.execute("delete from pending where url=?",(url,))
                 c.execute("insert or replace into failures(url,reason,attempts) values (?,'robots.txt blocked',1)",(url,))
                 c.commit()
                 continue
+            r=None
+            reason=None
             try:
                 r=s.get(url,timeout=30)
             except requests.RequestException as exc:
-                raise RuntimeError("network issue at %s: %s"%(url,exc))
-            if r.status_code in (429,500,502,503,504):
-                raise RuntimeError("temporary upstream HTTP %s; preserving queue"%r.status_code)
+                reason='Network error: '+str(exc)
+            if r is not None and (r.status_code==429 or 500<=r.status_code<600):
+                reason='HTTP '+str(r.status_code)
+            if reason:
+                wait=retry_after_seconds(r.headers.get('Retry-After')) if r is not None else 0
+                defer_url(c,url,reason,wait)
+                consecutive_errors+=1
+                if r is not None and r.status_code==429:
+                    pause_host(c,'Server rate limit',max(wait,900))
+                if wait>0:pause_host(c,reason+' with Retry-After',max(wait,delay))
+                if consecutive_errors>=5:pause_host(c,'Five consecutive server/network errors',900)
+                time.sleep(delay)
+                continue
+            consecutive_errors=0
             stamp=datetime.datetime.now(datetime.timezone.utc).isoformat()
             if r.status_code==200 and "html" in r.headers.get("content-type","").lower():
                 r.encoding=r.apparent_encoding if not r.encoding or r.encoding.lower()=="iso-8859-1" else r.encoding
                 c.execute("insert or replace into raw_pages values (?,?,?)",(url,gzip.compress(r.text.encode("utf-8")),stamp))
                 title,category,body,links=parse_page(r.text,url)
-                if THREAD.fullmatch(urlsplit(url).path) and len(body)>20:
+                c.execute('delete from failures where url=?',(url,))
+                if THREAD.fullmatch(urlsplit(url).path) and body:
                     c.execute("""insert into pages(url,title,category,body,fetched) values (?,?,?,?,?)
                     on conflict(url) do update set title=excluded.title,category=excluded.category,
                     body=excluded.body,fetched=excluded.fetched""",(url,title,category,body,stamp))
@@ -197,6 +251,8 @@ def crawl_batch():
                 inventory_links(c,url,links,stamp)
             elif r.status_code!=200:
                 c.execute("insert or replace into failures(url,reason,attempts) values (?,?,1)",(url,"HTTP %s"%r.status_code))
+            else:
+                c.execute("insert or replace into failures(url,reason,attempts) values (?,'Non-HTML response',1)",(url,))
             c.execute("insert or replace into visited values (?,?,?)",(url,r.status_code,stamp))
             c.execute("delete from pending where url=?",(url,))
             c.commit()
@@ -207,6 +263,7 @@ def crawl_batch():
         c.commit()
         raise
     finally:
+        s.close()
         c.execute("insert or replace into crawl_status values ('last_run',?)",(datetime.datetime.now(datetime.timezone.utc).isoformat(),))
         c.commit()
         c.close()

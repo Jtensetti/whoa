@@ -2,7 +2,7 @@ name: Crawl Whoa and export search for Sites
 on:
   push:
     branches: [main]
-    paths: ['main.py', 'build_static.py', 'export_index.py', 'whoa_parser.py', 'publish_index.py', 'web/**', '.github/workflows/archive.yml']
+    paths: ['main.py', 'build_static.py', 'export_index.py', 'whoa_parser.py', 'publish_index.py', 'test_crawler.py', 'web/**', '.github/workflows/archive.yml']
   workflow_dispatch:
   schedule:
     - cron: '17 * * * *'
@@ -26,7 +26,10 @@ jobs:
           node-version: '22'
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Verify crawler recovery
+        run: python -m unittest test_crawler -v
       - name: Restore persistent crawl database
+        id: restore
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -44,7 +47,7 @@ jobs:
           CONTACT_URL: https://github.com/Jtensetti/whoa/issues
         run: python -c "from main import crawl_batch; crawl_batch()"
       - name: Save resumable checkpoint
-        if: always()
+        if: always() && steps.restore.outcome == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
