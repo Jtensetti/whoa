@@ -1,21 +1,26 @@
-# Render deployment
+# Whoa Archive – kostnadsfri drift
 
-This repository defines one Python web service with a persistent 1 GB Render disk.
-It will **incur recurring paid charges** on Starter, including persistent storage.
-Check current pricing before applying the Blueprint.
+**Driftmodellen är GitHub Actions + GitHub Releases + GitHub Pages + Pagefind.**
+Ingen Render-tjänst eller betald databas behövs.
 
-## Provisioning
-1. Confirm Render workspace `Whoa Archive`.
-2. Open https://dashboard.render.com/blueprint/new?repo=https://github.com/Jtensetti/whoa
-3. Select `Whoa Archive`, review recurring costs, then Apply.
-4. Verify /api/stats and monitor `indexed_pages`, `queued_urls`, `last_error`.
-5. A robots.txt or network failure stops a batch without discarding the pending queue.
+## Kom igång
+1. Öppna **Settings → Pages** i GitHub-repot `Jtensetti/whoa`.
+2. Under **Build and deployment**, välj **GitHub Actions**.
+3. Öppna **Actions → Crawl Whoa and publish free search → Run workflow**. Ett tryck räcker. Schemalagda körningar sker därefter var fjärde timme.
+4. Följ loggen. Den redovisar `fetched`, `indexed`, `queued` och eventuella stopp.
+5. Webbplatsen publiceras normalt på **https://jtensetti.github.io/whoa/** när GitHub Pages är aktiverat och deployment har lyckats.
 
-## Notes
-- No claims of completeness until every public category page and thread page is discovered and the queue reaches zero with no unexplained failures.
-- At least 3 seconds between requests, one process. Larger archives require more than 1 GB; disk size can be increased later.
-- SQLite FTS5 indexes **forum thread pages** and includes text (subject to DOM parsing quality), not yet distinct individual author posts.
-- The site returns short excerpts and links to the original, not a republished copy.
-- Robots rules are checked before each crawl batch. If Whoa cannot be reached or robots.txt cannot be read, crawling pauses.
-- Database lives on mounted disk; do not run multiple workers and do not use ephemeral free storage.
-- Do not disable or bypass access restrictions or circumvent robots.txt.
+## Var datan ligger
+En komprimerad SQLite-databas `whoa.db.gz` sparas som asset i GitHub Release `archive-state` efter varje körning. Nästa körning laddar ner den och fortsätter. En körning gör högst 400 anrop och väntar minst tre sekunder mellan anrop. Detta är ungefär 20 minuter och begränsar belastningen på Whoa.
+
+## Förutsättningar
+- GitHub Actions och GitHub Pages måste vara aktiverade på repot.
+- Whoa måste svara från GitHubs körmiljö och tillåta insamling enligt robots.txt.
+- GitHub Pages har en publiceringsgräns på 1 GB. Kontrollera storleken när fler trådar har indexerats.
+- Fullständig täckning är **inte verifierad** förrän samtliga forumkategorier och paginerade trådar är inventerade, kön är tom och fel har granskats.
+- Inga träffar betyder inte att begreppet saknas från det ännu oindexerade materialet.
+- Indexet innehåller i första versionen trådsidor med extraherad text, inte en säker uppdelning av varje enskild skribents inlägg.
+- Projektet är oberoende av Whoa och visar länkar till originalkällan.
+
+## Kostnad
+GitHub Actions på publika repositories är avgiftsfritt med standardrunners. GitHub Pages är kostnadsfritt inom tjänstens gränser. Ingen server hos Render behövs. Kontrollera GitHubs aktuella kvoter och användningsvillkor innan storskalig publicering.
