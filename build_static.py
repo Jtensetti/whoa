@@ -2,7 +2,7 @@
 import json, os, sqlite3, html, hashlib, pathlib, re
 
 DB=os.environ.get("WHOA_DB","whoa.db")
-OUT=pathlib.Path(os.environ.get("WHOА_SITE","site"))
+OUT=pathlib.Path(os.environ.get("WHOA_SITE","site"))
 OUT.mkdir(parents=True,exist_ok=True)
 
 STYLE="""body{background:#121319;color:#f0eee9;font:16px system-ui,Arial;margin:0}
