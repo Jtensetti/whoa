@@ -30,6 +30,7 @@ function updateStats(){
   const date=new Date(state.stats.refreshed_at);text('#updated',Number.isNaN(+date)?'Okänt uppdateringsdatum':date.toLocaleString('sv-SE',{dateStyle:'short',timeStyle:'short'}));
   text('#data-source',state.source);
   text('#metadata-note',`${fmt(c.missing_author)} inlägg saknar skribentuppgift. ${fmt(c.missing_year)} saknar år. Filter utesluter inlägg som saknar den valda uppgiften.`);
+  text('#inventory-note',c.discovered_categories?`${fmt(c.discovered_categories)} kategorier upptäckta. ${fmt(c.crawled_listing_pages)} av ${fmt(c.known_listing_pages)} kända listsidor har hämtats. Trådarnas totala sidantal är fortfarande okänt.`:'Inventering av kategorier och listsidor pågår.');
   const err=state.stats.crawl_status?.last_error;
   $('#crawl-warning').hidden=!err;if(err)text('#crawl-warning','Senaste insamlingen avbröts: '+err+'. Redan indexerat material går fortfarande att söka.');
 }

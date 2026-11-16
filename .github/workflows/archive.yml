@@ -5,7 +5,7 @@ on:
     paths: ['main.py', 'build_static.py', 'export_index.py', 'whoa_parser.py', 'publish_index.py', 'web/**', '.github/workflows/archive.yml']
   workflow_dispatch:
   schedule:
-    - cron: '17 */4 * * *'
+    - cron: '17 * * * *'
 permissions:
   contents: write
 concurrency:
@@ -39,7 +39,8 @@ jobs:
         env:
           WHOA_DB: whoa.db
           CRAWL_DELAY: '3'
-          CRAWL_BATCH: ${{ github.event_name == 'push' && '60' || '400' }}
+          CRAWL_BATCH: '1000000'
+          CRAWL_SECONDS: ${{ github.event_name == 'push' && '180' || '2700' }}
           CONTACT_URL: https://github.com/Jtensetti/whoa/issues
         run: python -c "from main import crawl_batch; crawl_batch()"
       - name: Save resumable checkpoint

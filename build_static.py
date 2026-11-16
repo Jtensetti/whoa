@@ -32,13 +32,23 @@ for p in posts.values():
     path=OUT/'post'/slug/'index.html';path.parent.mkdir(parents=True,exist_ok=True)
     meta=''.join(f'<meta data-pagefind-meta="{key}[content]" content="{e(value)}">' for key,value in {'title':p['title'],'original_url':p['url'],'category':p['category'],'author':p['author'] or 'Okänd skribent','date':p['date'] or ''}.items())
     filters=''.join(f'<meta data-pagefind-filter="{key}[content]" content="{e(value)}">' for key,value in {'category':p['category'],'author':p['author'],'year':p['year']}.items() if value is not None)
-    page=f'<!doctype html><html lang="sv"><head><meta charset="utf-8"><title>{e(p["title"])}</title>{meta}{filters}</head><body><article data-pagefind-body><h1 data-pagefind-weight="0.2">{e(p["title"])}</h1><div>{e(p["body"])}</div></article><a href="{e(p["url"])}">Original på Whoa.nu</a></body></html>'
+    page=f'<!doctype html><html lang="sv"><head><meta charset="utf-8"><title>{e(p["title"])}</title>{meta}{filters}</head><body><article data-pagefind-body><h1 data-pagefind-weight="5">{e(p["title"])}</h1><div>{e(p["body"])}</div></article><a href="{e(p["url"])}">Original på Whoa.nu</a></body></html>'
     path.write_text(page,encoding='utf-8')
 count=lambda table:c.execute('select count(*) from '+table).fetchone()[0]
 coverage={'indexed_pages':len(indexed_pages),'indexed_posts':len(posts),'indexed_threads':len({p['thread_id'] for p in posts.values()}),
  'visited_urls':count('visited'),'queued_urls':count('pending'),'failed_urls':count('failures'),'parse_failures':len(parse_failures),
  'missing_author':sum(p['author'] is None for p in posts.values()),'missing_year':sum(p['year'] is None for p in posts.values()),
  'forum_total_known':False,'percent_complete':None,'verified_complete':False}
+tables={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+if 'category_inventory' in tables:
+    inventory=[dict(r) for r in c.execute('select * from category_inventory order by url')]
+    coverage['discovered_categories']=len(inventory)
+    coverage['known_listing_pages']=sum(r['listing_pages'] for r in inventory)
+    from main import CATEGORY
+    coverage['crawled_listing_pages']=sum(bool(CATEGORY.fullmatch(urlsplit(r['url']).path)) for r in rows)
+    coverage['inventoried_categories']=sum(r['listing_pages']>0 for r in inventory)
+else:inventory=[]
+(OUT/'inventory.json').write_text(json.dumps(inventory,ensure_ascii=False,indent=2),encoding='utf-8')
 status=dict(c.execute('select key,value from crawl_status'))
 stats={'schema_version':2,'source':'https://github.com/Jtensetti/whoa','source_commit':os.getenv('GITHUB_SHA','local-rebuild'),
  'run_url':f'https://github.com/Jtensetti/whoa/actions/runs/{os.environ["GITHUB_RUN_ID"]}' if 'GITHUB_RUN_ID' in os.environ else None,

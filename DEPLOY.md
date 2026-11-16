@@ -2,7 +2,8 @@
 
 ## Flöde
 
-1. GitHub Actions kör crawlern var fjärde timme och via **Run workflow**. Manuella och schemalagda körningar gör högst 400 anrop med minst tre sekunders mellanrum; robots.txt:s längre Crawl-delay respekteras.
+1. GitHub Actions kör crawlern varje timme och via **Run workflow**. Manuella och schemalagda körningar samlar i högst 45 minuter, med minst tre sekunders mellanrum mellan anrop; robots.txt:s längre Crawl-delay respekteras.
+   Crawlern inventerar alla kategorier och utökar kön till det sista sidnummer som originalets paginering visar. List- och trådsidor hämtas växelvis, utan prioritering av särskilda ämnen. Push-körningar gör en tre minuters kontrollinsamling.
 2. `whoa.db.gz` i release `archive-state` är checkpoint. Den innehåller besökta adresser, kö, fel, extraherad text och komprimerad original-HTML. Avbrutna körningar bevarar kön.
 3. `build_static.py` extraherar enskilda inlägg och verifierbar metadata ur den insamlade HTML-koden. Pagefind skapar ett uppdelat sökindex.
 4. `publish_index.py` publicerar indexet på grenen `archive-index`. En separat commit skriver `latest.json` med den föregående datacommitens SHA. Alla läsningar av indexdelar kan därför bindas till samma oföränderliga version.

@@ -12,12 +12,14 @@ ROOT_PATH="/community/Forums.aspx"
 DB=os.getenv("WHOA_DB","whoa.db")
 CONTACT=os.getenv("CONTACT_URL","https://github.com/Jtensetti/whoa")
 DELAY=max(2.0,float(os.getenv("CRAWL_DELAY","3")))
-BATCH=int(os.getenv("CRAWL_BATCH","400"))
+BATCH=int(os.getenv("CRAWL_BATCH","1000000"))
+SECONDS=int(os.getenv("CRAWL_SECONDS","2700"))
 UA="WhoaArchiveResearch/1.0 (+%s)"%CONTACT
 LOG=logging.getLogger("whoa")
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
 THREAD=re.compile(r"^/forum/[^/?#]+/[^/?#]+/[0-9]+/[0-9]+\.aspx$",re.I)
 CATEGORY=re.compile(r"^/forum/[^/?#]+/[^/?#]+(?:/[0-9]+)?\.aspx$",re.I)
+SPECIAL=re.compile(r"^/forum/(?:popular|latest|active)\.aspx$",re.I)
 app=FastAPI(title="Whoa Archive")
 state={"running":False,"last_error":None,"robots":None,"last_run":None}
 
@@ -50,6 +52,8 @@ def db():
     """)
     c.execute("CREATE TABLE IF NOT EXISTS raw_pages(url TEXT PRIMARY KEY, html_gz BLOB, fetched TEXT)")
     c.execute("CREATE TABLE IF NOT EXISTS crawl_status(key TEXT PRIMARY KEY,value TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS category_inventory(url TEXT PRIMARY KEY,listing_pages INTEGER NOT NULL DEFAULT 0,checked_at TEXT)")
+    c.execute("CREATE INDEX IF NOT EXISTS pending_priority ON pending(priority)")
     c.commit()
     return c
 
@@ -60,7 +64,7 @@ def canonical(href,base):
     path=u.path
     if path.lower()==ROOT_PATH.lower():
         return ROOT+ROOT_PATH
-    if not (THREAD.fullmatch(path) or CATEGORY.fullmatch(path)):
+    if not (THREAD.fullmatch(path) or CATEGORY.fullmatch(path) or SPECIAL.fullmatch(path)):
         return None
     params=parse_qs(u.query)
     page=(params.get("page") or params.get("Page") or [None])[0]
@@ -90,6 +94,53 @@ def parse_page(html,url):
         body='\n\n'.join(p['body'] for p in parsed['posts'])
     return title,category,body,{v for v in links if v}
 
+def enqueue(c,url):
+    if c.execute("select 1 from visited where url=?",(url,)).fetchone():return
+    u=urlsplit(url)
+    priority=100 if u.path==ROOT_PATH else (20 if THREAD.fullmatch(u.path) else (30 if CATEGORY.fullmatch(u.path) and not u.query else 10))
+    c.execute("insert or ignore into pending(url,priority) values (?,?)",(url,priority))
+
+def inventory_links(c,url,links,stamp):
+    """Expand only pagination bounded by page links actually observed in the source."""
+    current=urlsplit(url)
+    same_pages=[1]
+    for link in links:
+        part=urlsplit(link)
+        if CATEGORY.fullmatch(part.path) and not part.query:
+            c.execute("insert or ignore into category_inventory(url) values (?)",(ROOT+part.path,))
+        if part.path==current.path and CATEGORY.fullmatch(current.path):
+            value=parse_qs(part.query).get('page',['1'])[0]
+            if value.isdigit():same_pages.append(int(value))
+    if CATEGORY.fullmatch(current.path):
+        last=max(same_pages)
+        base=ROOT+current.path
+        c.execute("insert into category_inventory values (?,?,?) on conflict(url) do update set listing_pages=max(listing_pages,excluded.listing_pages),checked_at=excluded.checked_at",(base,last,stamp))
+        # Page-major insertion visits every category before moving deeper into its history.
+        for page in range(2,last+1):links.add(base+'?page='+str(page))
+    if THREAD.fullmatch(current.path):
+        stem=current.path.rsplit('/',1)[0]
+        last=max([int(current.path.rsplit('/',1)[1].split('.')[0])]+[int(urlsplit(link).path.rsplit('/',1)[1].split('.')[0]) for link in links if THREAD.fullmatch(urlsplit(link).path) and urlsplit(link).path.rsplit('/',1)[0]==stem])
+        for page in range(1,last+1):links.add(ROOT+stem+'/'+str(page)+'.aspx')
+    for link in sorted(links):enqueue(c,link)
+
+def prepare_frontier(c):
+    enqueue(c,ROOT+ROOT_PATH)
+    version=c.execute("select value from crawl_status where key='frontier_schema'").fetchone()
+    if not version or version[0]!='2':
+        # Upgrade the existing checkpoint without re-fetching already collected pages.
+        old=list(c.execute('select url,html_gz,fetched from raw_pages'))
+        for url,raw,stamp in old:
+            soup=BeautifulSoup(gzip.decompress(raw),'html.parser')
+            links={canonical(a['href'],url) for a in soup.select('a[href]')};links.discard(None)
+            inventory_links(c,url,links,stamp)
+        pending=[r[0] for r in c.execute('select url from pending')]
+        c.execute('delete from pending')
+        # Interleave list pages across all categories; threads retain discovery order.
+        pending.sort(key=lambda url:(0,int(parse_qs(urlsplit(url).query).get('page',['1'])[0]),url) if CATEGORY.fullmatch(urlsplit(url).path) else (1,0,''))
+        for url in pending:enqueue(c,url)
+        c.execute("insert or replace into crawl_status values ('frontier_schema','2')")
+    c.commit()
+
 def can_crawl(session):
     response=session.get(ROOT+"/robots.txt",timeout=20)
     if response.status_code not in (200,404):
@@ -109,19 +160,16 @@ def crawl_batch():
         state["robots"]="allowed"
         delay=max(DELAY,robots.crawl_delay(UA) or robots.crawl_delay("*") or 0)
         c.execute("insert or replace into crawl_status values ('last_error','')")
-        c.execute("insert or ignore into pending(url,priority) values (?,10)",(ROOT+ROOT_PATH,))
-        for seed in ("https://www.whoa.nu/forum/svensk-hiphop/allmant/605817/1.aspx",
-                     "https://www.whoa.nu/forum/svensk-hiphop/allmant/342967/1.aspx",
-                     "https://www.whoa.nu/forum/svensk-hiphop/allmant/444233/2.aspx",
-                     "https://www.whoa.nu/forum/svensk-hiphop/allmant/618123/1.aspx",
-                     "https://www.whoa.nu/forum/svensk-hiphop/allmant/625403/1.aspx",
-                     "https://www.whoa.nu/forum/svensk-hiphop/allmant/673772/1.aspx",
-                     "https://www.whoa.nu/forum/svensk-hiphop/allmant/613829/1.aspx"):
-            if not c.execute("select 1 from visited where url=?",(seed,)).fetchone():
-                c.execute("insert or ignore into pending values (?,11)",(seed,))
-        c.commit()
+        prepare_frontier(c)
+        started=time.monotonic()
         for i in range(BATCH):
-            row=c.execute("select url from pending order by priority desc,rowid limit 1").fetchone()
+            if time.monotonic()-started>=SECONDS:break
+            # Alternate listing discovery with full-text collection, without topic priorities.
+            row=c.execute("select url from pending where priority>=30 order by priority desc,rowid limit 1").fetchone()
+            if not row:
+                preferred=10 if i%2==0 else 20
+                row=c.execute("select url from pending where priority=? order by rowid limit 1",(preferred,)).fetchone()
+            if not row:row=c.execute("select url from pending order by rowid limit 1").fetchone()
             if not row:break
             url=row[0]
             if not robots.can_fetch(UA,url):
@@ -146,13 +194,7 @@ def crawl_batch():
                     body=excluded.body,fetched=excluded.fetched""",(url,title,category,body,stamp))
                 elif THREAD.fullmatch(urlsplit(url).path):
                     c.execute("insert or replace into failures values (?, 'No extractable forum posts', 1)",(url,))
-                for link in sorted(links):
-                    if c.execute("select 1 from visited where url=?",(link,)).fetchone():continue
-                    path=urlsplit(link).path
-                    # First category pages before thread pages; paginated lists must not starve threads.
-                    priority=8 if CATEGORY.fullmatch(path) and not urlsplit(link).query and not re.search(r"/[0-9]+\.aspx$",path) else (3 if THREAD.fullmatch(path) else 2)
-                    if path.startswith("/forum/svensk-hiphop/"): priority+=1
-                    c.execute("insert or ignore into pending(url,priority) values (?,?)",(link,priority))
+                inventory_links(c,url,links,stamp)
             elif r.status_code!=200:
                 c.execute("insert or replace into failures(url,reason,attempts) values (?,?,1)",(url,"HTTP %s"%r.status_code))
             c.execute("insert or replace into visited values (?,?,?)",(url,r.status_code,stamp))
