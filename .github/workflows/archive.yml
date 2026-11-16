@@ -1,0 +1,88 @@
+name: Crawl Whoa and publish free search
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 */4 * * *'
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: whoa-archive
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    environment:
+      name: github-pages
+      url: ${{ steps.publish.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install crawler and search dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore persistent database from the Archive release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          if gh release view archive-state >/dev/null 2>&1; then
+            gh release download archive-state --pattern 'whoa.db.gz' --clobber
+            if test -f whoa.db.gz; then gzip -dc whoa.db.gz > whoa.db; fi
+          fi
+
+      - name: Crawl at a deliberately slow rate
+        id: crawl
+        continue-on-error: true
+        env:
+          WHOA_DB: whoa.db
+          CRAWL_DELAY: '3'
+          CRAWL_BATCH: '400'
+          CONTACT_URL: https://github.com/Jtensetti/whoa/issues
+        run: python -c "from main import crawl_batch; crawl_batch()"
+
+      - name: Save the archive even when a batch encounters errors
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          if test -f whoa.db; then
+            python - <<'PY'
+          import sqlite3
+          db=sqlite3.connect('whoa.db')
+          db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+          print('Saved pages:',db.execute('SELECT COUNT(*) FROM pages').fetchone()[0])
+          db.close()
+          PY
+            gzip -c -9 whoa.db > whoa.db.gz
+            if ! gh release view archive-state >/dev/null 2>&1; then
+              gh release create archive-state --title 'Whoa crawl checkpoint' --notes 'Machine-generated crawler database. Archived for incremental indexing.' --latest=false
+            fi
+            gh release upload archive-state whoa.db.gz --clobber
+          fi
+
+      - name: Generate static search pages
+        run: python build_static.py
+
+      - name: Generate browser full-text search index
+        run: npx --yes pagefind@1.4.0 --site site
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: Publish search
+        id: publish
+        uses: actions/deploy-pages@v4
