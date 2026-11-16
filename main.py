@@ -1,4 +1,4 @@
-import os,re,time,sqlite3,threading,logging,datetime
+import os,re,time,sqlite3,threading,logging,datetime,gzip,json,hashlib
 from urllib.parse import urljoin,urlsplit,parse_qs,urlunsplit
 from urllib.robotparser import RobotFileParser
 import requests
@@ -15,8 +15,8 @@ BATCH=int(os.getenv("CRAWL_BATCH","400"))
 UA="WhoaArchiveResearch/1.0 (+%s)"%CONTACT
 LOG=logging.getLogger("whoa")
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
-THREAD=re.compile(r"^/forum/[^/?#]+/[^/?#]+/[0-9]+/[0-9]+\\.aspx$",re.I)
-CATEGORY=re.compile(r"^/forum/[^/?#]+/[^/?#]+(?:/[0-9]+)?\\.aspx$",re.I)
+THREAD=re.compile(r"^/forum/[^/?#]+/[^/?#]+/[0-9]+/[0-9]+\.aspx$",re.I)
+CATEGORY=re.compile(r"^/forum/[^/?#]+/[^/?#]+(?:/[0-9]+)?\.aspx$",re.I)
 app=FastAPI(title="Whoa Archive")
 state={"running":False,"last_error":None,"robots":None,"last_run":None}
 
@@ -47,6 +47,8 @@ def db():
     CREATE TABLE IF NOT EXISTS pending(url TEXT PRIMARY KEY,priority INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS failures(url TEXT PRIMARY KEY,reason TEXT,attempts INTEGER DEFAULT 1);
     """)
+    c.execute("CREATE TABLE IF NOT EXISTS raw_pages(url TEXT PRIMARY KEY, html_gz BLOB, fetched TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS crawl_status(key TEXT PRIMARY KEY,value TEXT)")
     c.commit()
     return c
 
@@ -78,10 +80,10 @@ def parse_page(html,url):
     if main is None:main=soup.body or soup
     # Parse the original document's links BEFORE modifying its DOM.
     links=[canonical(a.get("href",""),url) for a in soup.select("a[href]")]
-    for item in main.select("script,style,nav,header,footer,form,noscript,svg,iframe,.sidebar,.menu,.navigation,.breadcrumb,.pagination"):
+    for item in main.select("script,style,nav,header,footer,noscript,svg,iframe,.sidebar,.menu,.navigation,.breadcrumb,.pagination"):
         item.decompose()
     body=re.sub(r"\n{3,}","\n\n",main.get_text("\n",strip=True))
-    return title[:450],category[:200],body[:2000000],{v for v in links if v}
+    return title[:450],category[:200],body,{v for v in links if v}
 
 def can_crawl(session):
     response=session.get(ROOT+"/robots.txt",timeout=20)
@@ -100,7 +102,18 @@ def crawl_batch():
     try:
         robots=can_crawl(s)
         state["robots"]="allowed"
+        delay=max(DELAY,robots.crawl_delay(UA) or robots.crawl_delay("*") or 0)
+        c.execute("insert or replace into crawl_status values ('last_error','')")
         c.execute("insert or ignore into pending(url,priority) values (?,10)",(ROOT+ROOT_PATH,))
+        for seed in ("https://www.whoa.nu/forum/svensk-hiphop/allmant/605817/1.aspx",
+                     "https://www.whoa.nu/forum/svensk-hiphop/allmant/342967/1.aspx",
+                     "https://www.whoa.nu/forum/svensk-hiphop/allmant/444233/2.aspx",
+                     "https://www.whoa.nu/forum/svensk-hiphop/allmant/618123/1.aspx",
+                     "https://www.whoa.nu/forum/svensk-hiphop/allmant/625403/1.aspx",
+                     "https://www.whoa.nu/forum/svensk-hiphop/allmant/673772/1.aspx",
+                     "https://www.whoa.nu/forum/svensk-hiphop/allmant/613829/1.aspx"):
+            if not c.execute("select 1 from visited where url=?",(seed,)).fetchone():
+                c.execute("insert or ignore into pending values (?,11)",(seed,))
         c.commit()
         for i in range(BATCH):
             row=c.execute("select url from pending order by priority desc,rowid limit 1").fetchone()
@@ -119,23 +132,35 @@ def crawl_batch():
                 raise RuntimeError("temporary upstream HTTP %s; preserving queue"%r.status_code)
             stamp=datetime.datetime.now(datetime.timezone.utc).isoformat()
             if r.status_code==200 and "html" in r.headers.get("content-type","").lower():
+                r.encoding=r.apparent_encoding if not r.encoding or r.encoding.lower()=="iso-8859-1" else r.encoding
+                c.execute("insert or replace into raw_pages values (?,?,?)",(url,gzip.compress(r.text.encode("utf-8")),stamp))
                 title,category,body,links=parse_page(r.text,url)
                 if THREAD.fullmatch(urlsplit(url).path) and len(body)>20:
                     c.execute("""insert into pages(url,title,category,body,fetched) values (?,?,?,?,?)
                     on conflict(url) do update set title=excluded.title,category=excluded.category,
                     body=excluded.body,fetched=excluded.fetched""",(url,title,category,body,stamp))
-                for link in links:
+                for link in sorted(links):
                     if c.execute("select 1 from visited where url=?",(link,)).fetchone():continue
-                    priority=5 if CATEGORY.fullmatch(urlsplit(link).path) else 1
+                    path=urlsplit(link).path
+                    # First category pages before thread pages; paginated lists must not starve threads.
+                    priority=8 if CATEGORY.fullmatch(path) and not urlsplit(link).query and not re.search(r"/[0-9]+\.aspx$",path) else (3 if THREAD.fullmatch(path) else 2)
+                    if path.startswith("/forum/svensk-hiphop/"): priority+=1
                     c.execute("insert or ignore into pending(url,priority) values (?,?)",(link,priority))
-            elif r.status_code not in (200,404,410):
+            elif r.status_code!=200:
                 c.execute("insert or replace into failures(url,reason,attempts) values (?,?,1)",(url,"HTTP %s"%r.status_code))
             c.execute("insert or replace into visited values (?,?,?)",(url,r.status_code,stamp))
             c.execute("delete from pending where url=?",(url,))
             c.commit()
             if i%25==0:LOG.info("fetched=%s indexed=%s queued=%s",i,*c.execute("select count(*) from pages").fetchone(),*c.execute("select count(*) from pending").fetchone())
-            time.sleep(DELAY)
-    finally:c.close()
+            time.sleep(delay)
+    except Exception as exc:
+        c.execute("insert or replace into crawl_status values ('last_error',?)",(str(exc),))
+        c.commit()
+        raise
+    finally:
+        c.execute("insert or replace into crawl_status values ('last_run',?)",(datetime.datetime.now(datetime.timezone.utc).isoformat(),))
+        c.commit()
+        c.close()
 
 def worker():
     while True:
