@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: whoa-archive-search
+    runtime: python
+    plan: starter
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /api/stats
+    envVars:
+      - key: WHOA_DB
+        value: /var/data/whoa.db
+      - key: CONTACT_URL
+        value: https://github.com/Jtensetti/whoa
+      - key: CRAWL_DELAY
+        value: "3"
+      - key: CRAWL_BATCH
+        value: "400"
+      - key: PYTHON_VERSION
+        value: 3.12.7
+    disk:
+      name: whoa-index
+      mountPath: /var/data
+      sizeGB: 1
