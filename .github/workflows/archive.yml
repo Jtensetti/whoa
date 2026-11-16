@@ -1,6 +1,12 @@
 name: Crawl Whoa and publish free search
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'main.py'
+      - 'build_static.py'
+      - '.github/workflows/archive.yml'
   workflow_dispatch:
   schedule:
     - cron: '17 */4 * * *'
