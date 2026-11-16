@@ -40,7 +40,7 @@ jobs:
           WHOA_DB: whoa.db
           CRAWL_DELAY: '3'
           CRAWL_BATCH: '1000000'
-          CRAWL_SECONDS: ${{ github.event_name == 'push' && '180' || '2700' }}
+          CRAWL_SECONDS: '2700'
           CONTACT_URL: https://github.com/Jtensetti/whoa/issues
         run: python -c "from main import crawl_batch; crawl_batch()"
       - name: Save resumable checkpoint
