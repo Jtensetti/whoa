@@ -4,7 +4,7 @@ from urllib.parse import urlsplit
 from whoa_parser import extract_thread,THREAD
 ROOT=pathlib.Path(__file__).resolve().parent
 DB=pathlib.Path(os.environ.get('WHOA_DB','whoa.db'))
-OUT=pathlib.Path(os.environ.get('WHOA_SITE','site'))
+OUT=pathlib.Path(os.environ.get('WHOA_SITE','dist'))
 if not DB.exists():raise SystemExit('Crawl database missing: refusing to manufacture an empty archive')
 c=sqlite3.connect(f'file:{DB.resolve()}?mode=ro',uri=True);c.row_factory=sqlite3.Row
 rows=c.execute('select * from raw_pages').fetchall()
@@ -32,7 +32,7 @@ for p in posts.values():
     path=OUT/'post'/slug/'index.html';path.parent.mkdir(parents=True,exist_ok=True)
     meta=''.join(f'<meta data-pagefind-meta="{key}[content]" content="{e(value)}">' for key,value in {'title':p['title'],'original_url':p['url'],'category':p['category'],'author':p['author'] or 'Okänd skribent','date':p['date'] or ''}.items())
     filters=''.join(f'<meta data-pagefind-filter="{key}[content]" content="{e(value)}">' for key,value in {'category':p['category'],'author':p['author'],'year':p['year']}.items() if value is not None)
-    page=f'<!doctype html><html lang="sv"><head><meta charset="utf-8"><title>{e(p["title"])}</title>{meta}{filters}</head><body><article data-pagefind-body><h1 data-pagefind-weight="5">{e(p["title"])}</h1><div>{e(p["body"])}</div></article><a href="{e(p["url"])}">Original på Whoa.nu</a></body></html>'
+    page=f'<!doctype html><html lang="sv"><head><meta charset="utf-8"><title>{e(p["title"])}</title>{meta}{filters}</head><body><article data-pagefind-body><h1 data-pagefind-weight="0.2">{e(p["title"])}</h1><div>{e(p["body"])}</div></article><a href="{e(p["url"])}">Original på Whoa.nu</a></body></html>'
     path.write_text(page,encoding='utf-8')
 count=lambda table:c.execute('select count(*) from '+table).fetchone()[0]
 coverage={'indexed_pages':len(indexed_pages),'indexed_posts':len(posts),'indexed_threads':len({p['thread_id'] for p in posts.values()}),

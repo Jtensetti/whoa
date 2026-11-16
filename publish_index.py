@@ -19,8 +19,8 @@ with tempfile.TemporaryDirectory(prefix='whoa-index-') as tmp:
         git('config','user.name','github-actions[bot]',cwd=target)
         git('config','user.email','41898282+github-actions[bot]@users.noreply.github.com',cwd=target)
         shutil.rmtree(target/'pagefind',ignore_errors=True)
-        shutil.copytree(ROOT/'site/pagefind',target/'pagefind')
-        shutil.copy2(ROOT/'site/stats.json',target/'stats.json')
+        shutil.copytree(ROOT/'dist/pagefind',target/'pagefind')
+        shutil.copy2(ROOT/'dist/stats.json',target/'stats.json')
         git('add','pagefind','stats.json',cwd=target)
         if git('diff','--cached','--quiet',cwd=target,check=False).returncode:
             git('commit','-m','Update actual Whoa archive index',cwd=target)
@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory(prefix='whoa-index-') as tmp:
         if git('diff','--cached','--quiet',cwd=target,check=False).returncode:
             git('commit','-m','Point Sites to the immutable archive dataset',cwd=target)
         git('push','origin','HEAD:refs/heads/archive-index',cwd=target)
-        (ROOT/'site/latest.json').write_text(json.dumps(latest,ensure_ascii=False),encoding='utf-8')
+        (ROOT/'dist/latest.json').write_text(json.dumps(latest,ensure_ascii=False),encoding='utf-8')
         print('Published data commit:',data_sha)
     finally:
         git('worktree','remove','--force',str(target),check=False)

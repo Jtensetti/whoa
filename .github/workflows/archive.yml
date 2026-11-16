@@ -60,7 +60,7 @@ jobs:
         run: |
           python build_static.py
           python export_index.py
-          npx --yes pagefind@1.4.0 --site site --glob 'post/**/*.html'
+          npx --yes pagefind@1.4.0 --site dist --glob 'post/**/*.html'
       - name: Publish immutable index for Sites
         run: python publish_index.py
       - name: Export Site import bundle
@@ -68,7 +68,7 @@ jobs:
         with:
           name: whoa-search-import
           path: |
-            site/
+            dist/
             diagnostics/
             whoa.db.gz
           retention-days: 30

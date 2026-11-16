@@ -15,6 +15,7 @@ export function parseQuery(input){
 }
 export function spellingQueries(loose,enabled=true){
   const out=[loose]; if(!enabled || !loose)return out;
+  out.push(loose.normalize('NFD').replace(/[\u0300-\u036f]/g,''));
   const compact=loose.normalize('NFD').replace(/[\u0300-\u036f\s\-‐‑–]/g,'').toLowerCase();
   if(compact==='valdsironi')out.push('våldsironi','"vålds ironi"','vålds-ironi','valdsironi');
   if(/[-‐‑]/.test(loose))out.push(loose.replace(/[-‐‑]/g,''),loose.replace(/[-‐‑]/g,' '));
@@ -79,8 +80,8 @@ async function search(){
       if(i===0&&!parsed.loose)list=exact;else{const ids=new Set(exact.map(r=>r.id));list=list.filter(r=>ids.has(r.id))}
     }
     if(ticket!==state.ticket)return;state.list=list;
-    text('#result-count',`${fmt(list.length)} träffar i indexerade inlägg`);
-    text('#search-note',$('#variants').checked&&!parsed.phrases.length?'Sökning med stavningsvarianter. Citattecken begränsar till en fras.':parsed.phrases.length?'Fraser matchas i angiven ordning. Svenska tecken stöds.':'Stavningsvarianter är avstängda.');
+    text('#result-count',`${fmt(list.length)} ${list.length===1?'träff':'träffar'} i indexerade inlägg`);
+    text('#search-note',$('#variants').checked&&!parsed.phrases.length?'Varianter: med/utan diakritik och bindestreck. Våldsironi matchar även vålds-ironi och valdsironi.':parsed.phrases.length?'Fraser matchas i angiven ordning. Svenska tecken stöds.':'Stavningsvarianter är avstängda.');
     if(!list.length){empty('Inga träffar i den här delen av arkivet.','Prova en annan stavning eller ta bort ett filter. Forumet är inte färdigindexerat, så inga träffar betyder inte att uttrycket saknas på Whoa.');return}
     await renderPage(ticket);
   }catch(err){if(ticket===state.ticket){text('#result-count','Sökningen kunde inte slutföras');empty('Sökningen stannade.',err.message+' Ladda om sidan om indexet nyligen har uppdaterats.');}}

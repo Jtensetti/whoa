@@ -16,11 +16,11 @@ python -m venv .venv
 gh release download archive-state --pattern whoa.db.gz
 gzip -dc whoa.db.gz > whoa.db
 .venv/bin/python build_static.py
-npx --yes pagefind@1.4.0 --site site --glob 'post/**/*.html'
-python -m http.server 8080 --directory site
+npx --yes pagefind@1.4.0 --site dist --glob 'post/**/*.html'
+python -m http.server 8080 --directory dist
 ```
 
-Det krävs insamlad data. Byggaren skapar inga exempeldata. `site/stats.json` innehåller täckning och källversion. `site/provenance.json` redovisar källadresser, hämtningstid och SHA-256 för den avkodade original-HTML som extraktionen utgår från. `site/posts.jsonl.gz` är exporten av de sökbara inläggen.
+Det krävs insamlad data. Byggaren skapar inga exempeldata. `dist/stats.json` innehåller täckning och källversion. `dist/provenance.json` redovisar källadresser, hämtningstid och SHA-256 för den avkodade original-HTML som extraktionen utgår från. `dist/posts.jsonl.gz` är exporten av de sökbara inläggen.
 
 ## Sites
 

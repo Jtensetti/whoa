@@ -29,7 +29,7 @@ def extract_thread(document,url):
         native_id=id_node.get('value') if id_node else None
         post_id=f'{match[3]}:message:{native_id}' if native_id else (f'{match[3]}:topic' if ordinal==0 else f'{match[3]}:page:{match[4]}:position:{ordinal}')
         td=message.find_parent('td');anchor=td.get('id') if td else None
-        for el in message.select('script,style,noscript,iframe'):el.decompose()
+        for el in message.select('script,style,noscript,iframe,span[id$="_lblSubject"]'):el.decompose()
         for br in message.find_all('br'):br.replace_with('\n')
         body=message.get_text(' ',strip=False)
         body='\n'.join(re.sub(r'[^\S\n]+',' ',line).strip() for line in body.splitlines())
