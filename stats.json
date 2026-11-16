@@ -1,9 +1,9 @@
 {
   "schema_version": 2,
   "source": "https://github.com/Jtensetti/whoa",
-  "source_commit": "51d99f35d7f2b118122f0187078f21680723f3ff",
-  "run_url": "https://github.com/Jtensetti/whoa/actions/runs/43851040689",
-  "refreshed_at": "2026-11-16T10:41:17.132950+00:00",
+  "source_commit": "4f101586a9433c010b6af0c4278173fba61c7638",
+  "run_url": "https://github.com/Jtensetti/whoa/actions/runs/43852626529",
+  "refreshed_at": "2026-11-16T10:52:24.379034+00:00",
   "collected_until": "2026-11-16T10:34:32.714471+00:00",
   "coverage": {
     "indexed_pages": 25,
