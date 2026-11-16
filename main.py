@@ -15,8 +15,8 @@ BATCH=int(os.getenv("CRAWL_BATCH","400"))
 UA="WhoaArchiveResearch/1.0 (+%s)"%CONTACT
 LOG=logging.getLogger("whoa")
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
-THREAD=re.compile(r"^/forum/[^/?#]+/[^/?#]+/[0-9]+/[0-9]+\.aspx$",re.I)
-CATEGORY=re.compile(r"^/forum/(?:[^/?#]+/)?[^/?#]+\.aspx$",re.I)
+THREAD=re.compile(r"^/forum/[^/?#]+/[^/?#]+/[0-9]+/[0-9]+\\.aspx$",re.I)
+CATEGORY=re.compile(r"^/forum/[^/?#]+/[^/?#]+(?:/[0-9]+)?\\.aspx$",re.I)
 app=FastAPI(title="Whoa Archive")
 state={"running":False,"last_error":None,"robots":None,"last_run":None}
 
@@ -55,12 +55,13 @@ def canonical(href,base):
     if u.scheme not in ("https","http") or u.hostname not in ("whoa.nu","www.whoa.nu"):
         return None
     path=u.path
-    if path.lower()==ROOT_PATH.lower():return ROOT+ROOT_PATH
-    if not (THREAD.fullmatch(path) or CATEGORY.fullmatch(path)):return None
+    if path.lower()==ROOT_PATH.lower():
+        return ROOT+ROOT_PATH
+    if not (THREAD.fullmatch(path) or CATEGORY.fullmatch(path)):
+        return None
     params=parse_qs(u.query)
-    page=params.get("page",[None])[0]
-    if THREAD.fullmatch(path):return ROOT+path
-    if page and page.isdigit() and int(page)>1 and int(page)<100000:
+    page=(params.get("page") or params.get("Page") or [None])[0]
+    if page and page.isdigit() and 1<int(page)<100000:
         return ROOT+path+"?page="+str(int(page))
     return ROOT+path
 
