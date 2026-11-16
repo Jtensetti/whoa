@@ -2,7 +2,7 @@ name: Crawl Whoa and export search for Sites
 on:
   push:
     branches: [main]
-    paths: ['main.py', 'build_static.py', 'export_index.py', '.github/workflows/archive.yml']
+    paths: ['main.py', 'build_static.py', 'export_index.py', 'whoa_parser.py', 'publish_index.py', 'web/**', '.github/workflows/archive.yml']
   workflow_dispatch:
   schedule:
     - cron: '17 */4 * * *'
@@ -34,6 +34,7 @@ jobs:
           gzip -dc whoa.db.gz > whoa.db
       - name: Crawl public pages slowly
         id: crawl
+        if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[export-only]')
         continue-on-error: true
         env:
           WHOA_DB: whoa.db
@@ -59,7 +60,9 @@ jobs:
         run: |
           python build_static.py
           python export_index.py
-          npx --yes pagefind@1.4.0 --site site --glob 'thread/**/*.html'
+          npx --yes pagefind@1.4.0 --site site --glob 'post/**/*.html'
+      - name: Publish immutable index for Sites
+        run: python publish_index.py
       - name: Export Site import bundle
         uses: actions/upload-artifact@v4
         with:

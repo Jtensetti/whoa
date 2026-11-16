@@ -1,16 +1,18 @@
 # Whoa Search
 
-Oberoende, öppet arkivprojekt för fulltextsökning i Whoa.nu:s offentligt åtkomliga forum.
+Fulltextsökning i faktiskt insamlade offentliga Whoa-inlägg, med ChatGPT Sites som sökgränssnitt. Crawlern körs i GitHub Actions. Ingen Render-instans, extern sökdatabas eller betald söktjänst används.
 
-**Status:** Koden och automatiserad insamling är på plats, men hela forumet är ännu inte genomsökt och täckningen är inte verifierad.
+**Täckningen är inte fullständig eller verifierad.** Sidan visar antal indexerade trådsidor och inlägg, upptäckta adresser i kön, hämtfel och saknad metadata. Återstående andel är okänd tills forumet har inventerats.
 
-## Gratisdrift
+- Sökning i hela inläggstexten och trådrubriken med Pagefind 1.4.0.
+- Frassökning med citattecken, svenska tecken och valbar expansion av stavningsvarianter.
+- Kategori, skribent och år filtrerar det enskilda inlägget. Borttagna konton behandlas som okänd skribent.
+- Svarens original-ID och HTML-ankare bevaras. Trådstarten, som återkommer på flera sidor, dedupliceras.
+- Navigation, annonser och användarsignaturer indexeras inte.
+- Inga exempelposter läggs i produktionsindexet.
 
-Projektet använder GitHub Actions för stegvis crawlning, GitHub Releases för en återupptagbar SQLite-databas, Pagefind för fulltextsökning och GitHub Pages för webbplatsen. Det behövs ingen Render-instans.
+## Drift
 
-Se [DEPLOY.md](DEPLOY.md) för instruktioner och kontroller.
+Se [DEPLOY.md](DEPLOY.md). GitHub Actions sparar återupptagbar SQLite i release `archive-state`, bygger ett uppdelat fulltextindex och publicerar det på grenen `archive-index`. `latest.json` pekar på en oföränderlig dataversion. Sites har en importerad kopia och läser nyare index automatiskt från GitHub.
 
-## Särskilt intressant sökning
-`våldsironi`, `vålds-ironi`, `ordbajs`, `D6AA`, `MBMA`.
-
-Innehållet kommer från publika forumsidor. Följ Whoas robotregler, kontrollera arkivets täckning och hänvisa till originalsidan vid citat. Arkivet är inte kopplat till Whoa.
+Sidan är oberoende av Whoa. Kontrollera originaltrådarna innan material citeras eller tolkas.

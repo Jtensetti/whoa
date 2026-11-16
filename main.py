@@ -3,6 +3,7 @@ from urllib.parse import urljoin,urlsplit,parse_qs,urlunsplit
 from urllib.robotparser import RobotFileParser
 import requests
 from bs4 import BeautifulSoup
+from whoa_parser import extract_thread
 from fastapi import FastAPI,Query
 from fastapi.responses import HTMLResponse
 
@@ -83,7 +84,11 @@ def parse_page(html,url):
     for item in main.select("script,style,nav,header,footer,noscript,svg,iframe,.sidebar,.menu,.navigation,.breadcrumb,.pagination"):
         item.decompose()
     body=re.sub(r"\n{3,}","\n\n",main.get_text("\n",strip=True))
-    return title[:450],category[:200],body,{v for v in links if v}
+    if THREAD.fullmatch(urlsplit(url).path):
+        parsed=extract_thread(html,url)
+        title=parsed['title'];category=parsed['category']
+        body='\n\n'.join(p['body'] for p in parsed['posts'])
+    return title,category,body,{v for v in links if v}
 
 def can_crawl(session):
     response=session.get(ROOT+"/robots.txt",timeout=20)
@@ -139,6 +144,8 @@ def crawl_batch():
                     c.execute("""insert into pages(url,title,category,body,fetched) values (?,?,?,?,?)
                     on conflict(url) do update set title=excluded.title,category=excluded.category,
                     body=excluded.body,fetched=excluded.fetched""",(url,title,category,body,stamp))
+                elif THREAD.fullmatch(urlsplit(url).path):
+                    c.execute("insert or replace into failures values (?, 'No extractable forum posts', 1)",(url,))
                 for link in sorted(links):
                     if c.execute("select 1 from visited where url=?",(link,)).fetchone():continue
                     path=urlsplit(link).path
