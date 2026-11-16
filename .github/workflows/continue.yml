@@ -1,0 +1,32 @@
+name: Continue Whoa crawl
+on:
+  workflow_run:
+    workflows: ['Crawl Whoa and export search for Sites']
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['continue_crawl.py', 'test_continuation.py', '.github/workflows/continue.yml']
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: whoa-continuation
+  cancel-in-progress: false
+jobs:
+  continue:
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion != 'cancelled' && github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Verify continuation rules
+        run: python3 -m unittest test_continuation -v
+      - name: Continue saved work after cooldown
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 continue_crawl.py

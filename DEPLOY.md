@@ -50,3 +50,9 @@ Enstaka HTTP 5xx och nätverksfel sparas i kön med en stigande väntetid: en mi
 HTTP 429, serverns `Retry-After` och fem server-/nätverksfel i följd pausar hela insamlingen. En sparad väntetid respekteras också av nästa körning. En pausad eller avbruten körning sparar och exporterar redan insamlat material. Saknade och oläsbara sidor redovisas fortfarande som luckor.
 
 `python -m unittest test_crawler -v` verifierar återförsök, bevarad kö, gamla checkpointfiler och pauser utan att hämta webbsidor eller ändra den verkliga databasen.
+
+## Fortsättning mellan körningar
+
+`Continue Whoa crawl` lyssnar på avslutade insamlingskörningar och startar nästa pass med `workflow_dispatch` om det finns en sparad kö och indexexporten lyckades. Den väntar ut serverns paus, kontrollerar att inget annat pass redan kör eller väntar, och lämnar oväntade fel för granskning. Därmed är fortsatt insamling inte beroende enbart av GitHubs timschema.
+
+Fortsättningen körs också vid ändring av sin egen kod för att verifiera åtkomst och regler. Avbrutna körningar återstartas inte av denna fortsättning. För att stoppa all fortsatt insamling, inaktivera både `Continue Whoa crawl` och `Crawl Whoa and export search for Sites` i GitHub Actions och avbryt eventuella pågående körningar. Timkörningen finns kvar som reserv.
