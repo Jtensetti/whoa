@@ -2,8 +2,8 @@
   "schema_version": 2,
   "source": "https://github.com/Jtensetti/whoa",
   "source_commit": "64328d8e8d4e51d2f24acfc161cd369ee29936d3",
-  "run_url": "https://github.com/Jtensetti/whoa/actions/runs/45932239843",
-  "refreshed_at": "2026-11-27T03:23:05.616564+00:00",
+  "run_url": "https://github.com/Jtensetti/whoa/actions/runs/45985865830",
+  "refreshed_at": "2026-11-27T10:59:37.935226+00:00",
   "collected_until": "2026-11-27T03:14:19.421222+00:00",
   "coverage": {
     "indexed_pages": 18343,
@@ -26,8 +26,8 @@
   "crawl_status": {
     "frontier_schema": "2",
     "pause_until": "1795750175.7511482",
-    "last_error": "Five consecutive server/network errors; crawl paused until 2026-11-27T03:29:35.751148+00:00",
-    "last_run": "2026-11-27T03:14:35.751472+00:00"
+    "last_error": "HTTPSConnectionPool(host='www.whoa.nu', port=443): Read timed out. (read timeout=20)",
+    "last_run": "2026-11-27T10:54:00.436289+00:00"
   },
   "parse_failures": [
     "https://www.whoa.nu/forum/klubb-och-konserter/festivaler/373615/2.aspx",
